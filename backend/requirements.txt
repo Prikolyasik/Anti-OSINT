@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+httpx
+faker
+reportlab
+python-dotenv
