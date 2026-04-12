@@ -4,3 +4,5 @@ httpx
 faker
 reportlab
 python-dotenv
+Pillow
+python-multipart
