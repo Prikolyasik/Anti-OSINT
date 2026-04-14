@@ -5,14 +5,13 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from dotenv import load_dotenv
-# Загружаем .env из backend/ если существует
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'backend', '.env'))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from mangum import Mangum
 
-# Добавляем backend/routers в путь
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend', 'routers'))
 
 from routers.email_check import router as email_router
@@ -33,7 +32,6 @@ class StripApiPrefixMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         if path.startswith("/api/") and path != "/api/health":
-            # Перезаписываем path, убирая /api
             new_path = path[len("/api"):]
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode()
@@ -42,7 +40,6 @@ class StripApiPrefixMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(StripApiPrefixMiddleware)
 
-# CORS
 ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
 
 app.add_middleware(
@@ -72,5 +69,5 @@ def health():
     return {"status": "ok"}
 
 
-# --- Vercel serverless entry point ---
-handler = app
+# Vercel serverless entry point (ASGI -> WSGI)
+handler = Mangum(app)
