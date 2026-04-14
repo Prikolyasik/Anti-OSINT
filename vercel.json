@@ -13,6 +13,9 @@
       "use": "@vercel/python"
     }
   ],
+  "env": {
+    "REACT_APP_API_URL": "/api"
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",

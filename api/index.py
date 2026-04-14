@@ -1,23 +1,669 @@
-import json
+import os
+import re
+import hashlib
+from datetime import datetime
+from typing import Optional, List
+from contextlib import contextmanager
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from pydantic import BaseModel
+from mangum import Mangum
+from faker import Faker
+import httpx
+from PIL import Image
+from PIL.ExifTags import TAGS
+import io
+
+# --- DATABASE (PostgreSQL - Neon) ---
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+_db_initialized = False
+
+def get_db_connection():
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn, RealDictCursor
+
+def init_db():
+    global _db_initialized
+    if _db_initialized or not DATABASE_URL:
+        return
+    try:
+        conn, _ = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS identities (
+                id SERIAL PRIMARY KEY,
+                label TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT,
+                birthdate TEXT,
+                address TEXT,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                password_strength TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        conn.close()
+        _db_initialized = True
+    except Exception:
+        pass
+
+# --- APP ---
+
+app = FastAPI(title="Digital Alibi API")
 
 
-def _wsgi_handler(environ, start_response):
-    status = '200 OK'
-    headers = [
-        ('Content-Type', 'application/json'),
-        ('Access-Control-Allow-Origin', '*'),
-        ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
-        ('Access-Control-Allow-Headers', '*'),
-    ]
-    start_response(status, headers)
-    response = {
-        "status": "ok",
-        "message": "Python serverless работает!",
-        "path": environ.get('PATH_INFO', ''),
+class StripApiPrefixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/api/") and path != "/api/health":
+            new_path = path[len("/api"):]
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode()
+        return await call_next(request)
+
+
+app.add_middleware(StripApiPrefixMiddleware)
+
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+fake = Faker("ru_RU")
+
+# --- ROOT ---
+
+@app.get("/")
+def root():
+    return {"message": "Digital Alibi API работает!"}
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
+
+# ============================================================
+# EMAIL CHECK
+# ============================================================
+
+@app.get("/check/email/{email}")
+async def check_email(email: str):
+    api_key = os.getenv("LEAKCHECK_API_KEY")
+    if not api_key:
+        return {"error": "LEAKCHECK_API_KEY не настроен"}
+
+    url = f"https://leakcheck.io/api/public?key={api_key}&check={email}"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+    data = response.json()
+
+    if not data.get("found"):
+        return {"email": email, "breaches": [], "count": 0, "risk": "низкий"}
+
+    sources = data.get("sources", [])
+    count = len(sources)
+    risk = "низкий" if count == 0 else "средний" if count < 3 else "высокий"
+
+    return {"email": email, "count": count, "risk": risk, "breaches": sources}
+
+# ============================================================
+# FAKE DATA
+# ============================================================
+
+@app.get("/generate/identity")
+def generate_identity():
+    return {
+        "name": fake.name(),
+        "email": fake.email(),
+        "phone": fake.phone_number(),
+        "birthdate": str(fake.date_of_birth(minimum_age=18, maximum_age=60)),
+        "address": fake.address(),
+        "username": fake.user_name(),
+        "password": fake.password(length=12)
     }
-    return [json.dumps(response, ensure_ascii=False).encode('utf-8')]
+
+# ============================================================
+# USERNAME CHECK
+# ============================================================
+
+PLATFORMS = [
+    {"name": "GitHub", "url": "https://github.com/{}"},
+    {"name": "Twitter", "url": "https://twitter.com/{}"},
+    {"name": "Reddit", "url": "https://www.reddit.com/user/{}"},
+    {"name": "Instagram", "url": "https://www.instagram.com/{}"},
+    {"name": "Facebook", "url": "https://www.facebook.com/{}"},
+    {"name": "YouTube", "url": "https://www.youtube.com/@{}"},
+    {"name": "TikTok", "url": "https://www.tiktok.com/@{}"},
+    {"name": "Twitch", "url": "https://www.twitch.tv/{}"},
+    {"name": "Steam", "url": "https://steamcommunity.com/id/{}"},
+    {"name": "Telegram", "url": "https://t.me/{}"},
+    {"name": "VK", "url": "https://vk.com/{}"},
+    {"name": "Pinterest", "url": "https://www.pinterest.com/{}"},
+    {"name": "Tumblr", "url": "https://{}.tumblr.com"},
+    {"name": "WordPress", "url": "https://{}.wordpress.com"},
+    {"name": "Medium", "url": "https://medium.com/@{}"},
+    {"name": "LinkedIn", "url": "https://www.linkedin.com/in/{}"},
+    {"name": "SoundCloud", "url": "https://soundcloud.com/{}"},
+    {"name": "Spotify", "url": "https://open.spotify.com/user/{}"},
+    {"name": "Vimeo", "url": "https://vimeo.com/{}"},
+    {"name": "Flickr", "url": "https://www.flickr.com/people/{}"},
+    {"name": "500px", "url": "https://500px.com/p/{}"},
+    {"name": "Gravatar", "url": "https://en.gravatar.com/{}"},
+    {"name": "Last.fm", "url": "https://www.last.fm/user/{}"},
+    {"name": "Goodreads", "url": "https://www.goodreads.com/{}"},
+    {"name": "DeviantArt", "url": "https://{}.deviantart.com"},
+    {"name": "Behance", "url": "https://www.behance.net/{}"},
+    {"name": "Dribbble", "url": "https://dribbble.com/{}"},
+    {"name": "CodePen", "url": "https://codepen.io/{}"},
+    {"name": "GitLab", "url": "https://gitlab.com/{}"},
+    {"name": "Bitbucket", "url": "https://bitbucket.org/{}"},
+    {"name": "SourceForge", "url": "https://sourceforge.net/u/{}"},
+    {"name": "Docker Hub", "url": "https://hub.docker.com/u/{}"},
+    {"name": "ProductHunt", "url": "https://www.producthunt.com/@{}"},
+    {"name": "AngelList", "url": "https://angel.co/{}"},
+    {"name": "Keybase", "url": "https://keybase.io/{}"},
+    {"name": "Patreon", "url": "https://www.patreon.com/{}"},
+    {"name": "PayPal", "url": "https://paypal.me/{}"},
+    {"name": "CashApp", "url": "https://cash.app/${}"},
+    {"name": "Venmo", "url": "https://venmo.com/{}"},
+    {"name": "Wikipedia", "url": "https://en.wikipedia.org/wiki/User:{}"},
+    {"name": "Fandom", "url": "https://community.fandom.com/wiki/User:{}"},
+    {"name": "Mastodon", "url": "https://mastodon.social/@{}"},
+    {"name": "Threads", "url": "https://www.threads.net/@{}"},
+    {"name": "Bluesky", "url": "https://bsky.app/profile/{}"},
+    {"name": "Roblox", "url": "https://www.roblox.com/search/users?keyword={}"},
+    {"name": "Minecraft", "url": "https://namemc.com/profile/{}"},
+    {"name": "Xbox", "url": "https://account.xbox.com/profile?gamertag={}"},
+    {"name": "PlayStation", "url": "https://psnprofiles.com/{}"},
+    {"name": "Nintendo", "url": "https://support.nintendo.com/switch/profile"},
+    {"name": "HackerRank", "url": "https://www.hackerrank.com/{}"},
+    {"name": "LeetCode", "url": "https://leetcode.com/{}"},
+    {"name": "Codeforces", "url": "https://codeforces.com/profile/{}"},
+    {"name": "AtCoder", "url": "https://atcoder.jp/users/{}"},
+    {"name": "Topcoder", "url": "https://www.topcoder.com/members/{}"},
+    {"name": "StackOverflow", "url": "https://stackoverflow.com/users/{}"},
+    {"name": "AskUbuntu", "url": "https://askubuntu.com/users/{}"},
+    {"name": "SuperUser", "url": "https://superuser.com/users/{}"},
+    {"name": "ServerFault", "url": "https://serverfault.com/users/{}"},
+    {"name": "Meta StackOverflow", "url": "https://meta.stackoverflow.com/users/{}"},
+    {"name": "Habr", "url": "https://habr.com/users/{}"},
+    {"name": "Pikabu", "url": "https://pikabu.ru/@{}"},
+    {"name": "DTF", "url": "https://dtf.ru/u/{}"},
+    {"name": "VC.ru", "url": "https://vc.ru/u/{}"},
+    {"name": "Livelib", "url": "https://www.livelib.ru/reader/{}"},
+    {"name": "KinoPoisk", "url": "https://www.kinopoisk.ru/user/{}"},
+]
 
 
-app = _wsgi_handler
-application = _wsgi_handler
-handler = _wsgi_handler
+@app.get("/check/username/{username}")
+async def check_username(username: str):
+    found = []
+    not_found = []
+    errors = []
+
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        for platform in PLATFORMS:
+            url = platform["url"].format(username)
+            try:
+                resp = await client.get(url, follow_redirects=True)
+                exists = resp.status_code == 200
+                result = {"site": platform["name"], "url": url, "exists": exists}
+                if exists:
+                    found.append(result)
+                else:
+                    not_found.append(result)
+            except Exception:
+                errors.append({"site": platform["name"], "url": url, "exists": False, "error": "Ошибка проверки"})
+
+    return {
+        "username": username,
+        "total_sites_checked": len(PLATFORMS),
+        "found": found,
+        "not_found": not_found,
+        "error_count": len(errors),
+        "found_count": len(found),
+        "not_found_count": len(not_found),
+    }
+
+# ============================================================
+# PASSWORD CHECK
+# ============================================================
+
+def _calc_password_strength(password: str) -> dict:
+    score = 0
+    length = len(password)
+    issues = []
+    suggestions = []
+
+    if length >= 16:
+        score += 25
+    elif length >= 12:
+        score += 20
+    elif length >= 8:
+        score += 10
+    else:
+        issues.append("Пароль слишком короткий (менее 8 символов)")
+        suggestions.append("Используйте минимум 12 символов")
+
+    has_lower = bool(re.search(r"[a-z]", password))
+    has_upper = bool(re.search(r"[A-Z]", password))
+    has_digit = bool(re.search(r"\d", password))
+    has_special = bool(re.search(r"[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]", password))
+
+    if has_lower: score += 10
+    else: suggestions.append("Добавьте строчные буквы")
+
+    if has_upper: score += 15
+    else: suggestions.append("Добавьте заглавные буквы")
+
+    if has_digit: score += 15
+    else: suggestions.append("Добавьте цифры")
+
+    if has_special: score += 20
+    else: suggestions.append("Добавьте спецсимволы (!@#$%^&*)")
+
+    if not re.search(r"(.)\1{2,}", password):
+        score += 15
+    else:
+        issues.append("Есть повторяющиеся символы подряд")
+
+    strength = "очень слабый" if score < 25 else "слабый" if score < 50 else "средний" if score < 75 else "хороший" if score < 90 else "отличный"
+    return {"score": min(score, 100), "strength": strength, "length": length, "issues": issues, "suggestions": suggestions}
+
+
+@app.post("/check/password")
+async def check_password(data: dict):
+    password = data.get("password", "")
+    strength = _calc_password_strength(password)
+
+    # HIBP k-Anonymity
+    hibp_found = 0
+    hibp_risk = "безопасный"
+    hibp_note = ""
+
+    if password:
+        sha1 = hashlib.sha1(password.encode()).hexdigest().upper()
+        prefix, suffix = sha1[:5], sha1[5:]
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"https://api.pwnedpasswords.com/range/{prefix}")
+                for line in resp.text.splitlines():
+                    if line.split(":")[0] == suffix:
+                        hibp_found = int(line.split(":")[1])
+                        break
+        except Exception:
+            pass
+
+        if hibp_found > 1000:
+            hibp_risk = "критический"
+        elif hibp_found > 100:
+            hibp_risk = "высокий"
+        elif hibp_found > 10:
+            hibp_risk = "средний"
+        elif hibp_found > 0:
+            hibp_risk = "низкий"
+
+        hibp_note = "Проверка через Have I Been Pwned (k-Anonymity)"
+
+    recommendation = "Пароль надёжный! ✅" if strength["score"] >= 75 and hibp_found == 0 else "Рекомендуем сменить пароль ⚠️"
+
+    return {
+        "strength": strength,
+        "hibp": {"found": hibp_found > 0, "pwned_count": hibp_found, "risk_level": hibp_risk, "k_anonymity_note": hibp_note},
+        "recommendation": recommendation
+    }
+
+# ============================================================
+# PRIVACY SCORE
+# ============================================================
+
+@app.post("/privacy/score")
+async def privacy_score(data: dict):
+    email = data.get("email")
+    username = data.get("username")
+    password = data.get("password")
+
+    score = 100
+    details = {}
+    recommendations = []
+
+    if email:
+        api_key = os.getenv("LEAKCHECK_API_KEY")
+        breach_count = 0
+        if api_key:
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(f"https://leakcheck.io/api/public?key={api_key}&check={email}")
+                    rdata = resp.json()
+                    breach_count = len(rdata.get("sources", [])) if rdata.get("found") else 0
+            except Exception:
+                pass
+
+        breach_penalty = min(breach_count * 10, 50)
+        score -= breach_penalty
+        details["email"] = {"breach_count": breach_count, "breach_penalty": breach_penalty}
+        if breach_count > 0:
+            recommendations.append(f"Email найден в {breach_count} утечках. Рассмотрите замену.")
+
+    if username:
+        spread_count = 0
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                for p in PLATFORMS[:20]:
+                    url = p["url"].format(username)
+                    try:
+                        r = await client.get(url, follow_redirects=True)
+                        if r.status_code == 200:
+                            spread_count += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        spread_penalty = min(spread_count * 3, 30)
+        score -= spread_penalty
+        details["username"] = {"spread_count": spread_count, "spread_penalty": spread_penalty}
+        if spread_count > 5:
+            recommendations.append(f"Username найден на {spread_count} платформах. Используйте разные ники.")
+
+    if password:
+        pw = _calc_password_strength(password)
+        pw_penalty = max(0, 30 - pw["score"] // 3)
+        score -= pw_penalty
+        details["password"] = {"strength": pw["strength"], "total_password_penalty": pw_penalty}
+        if pw["score"] < 50:
+            recommendations.append("Пароль слабый. Используйте генератор паролей.")
+
+    total_penalty = 100 - max(score, 0)
+    emoji = "🟢" if score >= 80 else "🟡" if score >= 50 else "🔴"
+
+    return {
+        "score": max(score, 0),
+        "emoji": emoji,
+        "total_penalty": total_penalty,
+        "details": details,
+        "recommendations": recommendations
+    }
+
+# ============================================================
+# EXIF
+# ============================================================
+
+@app.post("/exif/analyze")
+async def exif_analyze(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        img = Image.open(io.BytesIO(contents))
+        exif_data = img.getexif()
+
+        parsed = {}
+        privacy_risks = []
+
+        for tag_id, value in exif_data.items():
+            tag = TAGS.get(tag_id, str(tag_id))
+            if isinstance(value, bytes):
+                value = value.decode("utf-8", errors="replace")
+            parsed[tag] = str(value)
+
+            if tag in ("GPSInfo", "GPS"):
+                privacy_risks.append("Обнаружены GPS-координаты")
+            if "Location" in tag:
+                privacy_risks.append(f"Обнаружена локация: {value}")
+            if tag == "Software":
+                privacy_risks.append(f"ПО может раскрыть устройство: {value}")
+
+        if not privacy_risks and len(parsed) > 3:
+            privacy_risks.append("Метаданные могут содержать скрытую информацию")
+
+        risk_level = "высокий" if len(privacy_risks) >= 2 else "средний" if len(privacy_risks) >= 1 else "низкий"
+
+        return {
+            "filename": file.filename,
+            "exif_count": len(parsed),
+            "exif_data": parsed,
+            "privacy_risks": privacy_risks,
+            "risk_level": risk_level
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка анализа: {str(e)}")
+
+
+@app.post("/exif/clean")
+async def exif_clean(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        img = Image.open(io.BytesIO(contents))
+
+        data = list(img.getdata())
+        img_clean = Image.new(img.mode, img.size)
+        img_clean.putdata(data)
+
+        buf = io.BytesIO()
+        fmt = img.format or "PNG"
+        img_clean.save(buf, format=fmt)
+        buf.seek(0)
+
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="cleaned_{file.filename}"'})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Ошибка очистки: {str(e)}")
+
+# ============================================================
+# PDF REPORT
+# ============================================================
+
+@app.get("/report/generate")
+async def generate_report(email: str):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+
+        font_path = os.path.join(os.path.dirname(__file__), "fonts", "DejaVuSans.ttf")
+        font_file = font_path if os.path.exists(font_path) else None
+
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        w, h = A4
+
+        if font_file:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+            pdfmetrics.registerFont(TTFont("DejaVu", font_file))
+            c.setFont("DejaVu", 18)
+        else:
+            c.setFont("Helvetica", 18)
+
+        c.drawString(50, h - 50, "Digital Alibi - PDF Report")
+        c.drawString(50, h - 80, f"Email: {email}")
+        c.save()
+        buf.seek(0)
+
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="report_{email}.pdf"'})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка генерации PDF: {str(e)}")
+
+# ============================================================
+# IDENTITY MANAGER (PostgreSQL)
+# ============================================================
+
+class IdentityCreate(BaseModel):
+    label: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    birthdate: Optional[str] = None
+    address: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class IdentityUpdate(BaseModel):
+    label: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    birthdate: Optional[str] = None
+    address: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+def _check_pw(password: str) -> str:
+    score = sum([
+        len(password) >= 8, len(password) >= 12,
+        bool(re.search(r"[a-z]", password)), bool(re.search(r"[A-Z]", password)),
+        bool(re.search(r"\d", password)), bool(re.search(r"[!@#$%^&*()_+\-=\[\]{};':\"\\|,.<>\/?]", password))
+    ])
+    return "слабый" if score <= 2 else "средний" if score <= 4 else "сильный"
+
+
+@app.get("/generate_identity")
+def generate_identity_raw():
+    pw = fake.password(length=14, special_chars=True, digits=True, upper_case=True, lower_case=True)
+    return {
+        "name": fake.name(), "email": fake.email(), "phone": fake.phone_number(),
+        "birthdate": str(fake.date_of_birth(minimum_age=18, maximum_age=60)),
+        "address": fake.address(), "username": fake.user_name(),
+        "password": pw, "password_strength": _check_pw(pw),
+    }
+
+
+@app.post("/identities/")
+def create_identity(data: IdentityCreate):
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL не настроен")
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    init_db()
+    name = data.name or fake.name()
+    email = data.email or fake.email()
+    phone = data.phone or fake.phone_number()
+    birthdate = data.birthdate or str(fake.date_of_birth(minimum_age=18, maximum_age=60))
+    address = data.address or fake.address()
+    username = data.username or fake.user_name()
+    password = data.password or fake.password(length=14, special_chars=True, digits=True, upper_case=True, lower_case=True)
+    pw_str = _check_pw(password)
+
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO identities (label,name,email,phone,birthdate,address,username,password,password_strength,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
+        (data.label, name, email, phone, birthdate, address, username, password, pw_str, datetime.now().isoformat())
+    )
+    identity_id = cursor.fetchone()[0]
+    conn.commit()
+    conn.close()
+
+    return {
+        "id": identity_id, "label": data.label, "name": name, "email": email,
+        "phone": phone, "birthdate": birthdate, "address": address,
+        "username": username, "password": password, "password_strength": pw_str,
+        "message": "Личность сохранена"
+    }
+
+
+@app.get("/identities/")
+def list_identities():
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL не настроен")
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    init_db()
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM identities ORDER BY created_at DESC")
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [dict(r) for r in rows]
+
+
+@app.get("/identities/{identity_id}")
+def get_identity(identity_id: int):
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL не настроен")
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    init_db()
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM identities WHERE id = %s", (identity_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Личность не найдена")
+    return dict(row)
+
+
+@app.put("/identities/{identity_id}")
+def update_identity(identity_id: int, data: IdentityUpdate):
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL не настроен")
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+
+    init_db()
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM identities WHERE id = %s", (identity_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Личность не найдена")
+
+    updates = {}
+    for field in ["label", "name", "email", "phone", "birthdate", "address", "username"]:
+        val = getattr(data, field)
+        if val is not None:
+            updates[field] = val
+    if data.password is not None:
+        updates["password"] = data.password
+        updates["password_strength"] = _check_pw(data.password)
+
+    if updates:
+        set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+        values = list(updates.values()) + [identity_id]
+        cursor.execute(f"UPDATE identities SET {set_clause} WHERE id = %s", values)
+        conn.commit()
+    conn.close()
+    return {"message": "Личность обновлена", "id": identity_id}
+
+
+@app.delete("/identities/{identity_id}")
+def delete_identity(identity_id: int):
+    if not DATABASE_URL:
+        raise HTTPException(status_code=500, detail="DATABASE_URL не настроен")
+    import psycopg2
+
+    init_db()
+    conn = psycopg2.connect(DATABASE_URL)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM identities WHERE id = %s", (identity_id,))
+    if cursor.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Личность не найдена")
+    conn.commit()
+    conn.close()
+    return {"message": "Личность удалена", "id": identity_id}
+
+
+# --- Vercel serverless entry point ---
+handler = Mangum(app)
