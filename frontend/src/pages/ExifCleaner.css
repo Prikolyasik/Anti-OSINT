@@ -1,0 +1,248 @@
+.exif-cleaner-page {
+  position: relative;
+  z-index: 1;
+  padding: 100px 24px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+.dropzone-container {
+  max-width: 700px;
+  margin: 0 auto 40px;
+}
+
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 16px;
+  padding: 60px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+}
+
+.dropzone:hover,
+.dropzone.active {
+  border-color: var(--primary);
+  background: rgba(0, 240, 255, 0.05);
+  box-shadow: var(--glow-primary);
+}
+
+.dropzone-icon {
+  font-size: 64px;
+  color: var(--primary);
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 20px rgba(0, 240, 255, 0.3));
+}
+
+.dropzone-content h3 {
+  font-size: 20px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.dropzone-content p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.file-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-top: 20px;
+}
+
+.file-preview {
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+.file-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-details {
+  flex: 1;
+}
+
+.file-details h4 {
+  font-size: 16px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.file-details p {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.file-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn-reset {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-reset:hover {
+  background: rgba(255, 0, 110, 0.1);
+}
+
+.privacy-risks-section,
+.exif-data-section {
+  background: var(--bg-glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.privacy-risks-section h3,
+.exif-data-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  margin-bottom: 20px;
+  color: var(--danger);
+}
+
+.risks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.risk-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(255, 0, 110, 0.05);
+  border-left: 3px solid var(--danger);
+  border-radius: 8px;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.risk-item svg {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.exif-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.exif-card {
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.exif-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-4px);
+}
+
+.exif-card.gps {
+  border-color: rgba(255, 0, 110, 0.3);
+  background: rgba(255, 0, 110, 0.05);
+}
+
+.exif-icon {
+  font-size: 28px;
+  color: var(--primary);
+  margin-bottom: 12px;
+  filter: drop-shadow(0 0 10px rgba(0, 240, 255, 0.3));
+}
+
+.exif-card.gps .exif-icon {
+  color: var(--danger);
+  filter: drop-shadow(0 0 10px rgba(255, 0, 110, 0.3));
+}
+
+.exif-card h4 {
+  font-size: 14px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.exif-card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+.exif-value {
+  word-break: break-all;
+}
+
+.clean-cta {
+  text-align: center;
+  padding: 40px;
+  background: rgba(0, 255, 136, 0.05);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: 16px;
+}
+
+.clean-cta p {
+  font-size: 18px;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+@media (max-width: 768px) {
+  .file-info {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .file-actions {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  
+  .file-actions button {
+    flex: 1;
+    min-width: 140px;
+  }
+  
+  .exif-grid {
+    grid-template-columns: 1fr;
+  }
+}
