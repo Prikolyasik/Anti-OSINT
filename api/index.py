@@ -1,18 +1,15 @@
 import os
 import sys
 
-# Добавляем backend в PYTHONPATH, чтобы импортировать routers
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from dotenv import load_dotenv
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', 'backend', '.env'))
+load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from mangum import Mangum
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend', 'routers'))
 
 from routers.email_check import router as email_router
 from routers.fake_data import router as fake_router
@@ -69,5 +66,5 @@ def health():
     return {"status": "ok"}
 
 
-# Vercel serverless entry point (ASGI -> WSGI)
+# Vercel serverless entry point
 handler = Mangum(app)
