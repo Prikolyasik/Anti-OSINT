@@ -58,6 +58,7 @@ const PasswordCheck = () => {
     { subject: 'Строчные', A: /[a-z]/.test(password) ? 100 : 0, fullMark: 100 },
     { subject: 'Заглавные', A: /[A-Z]/.test(password) ? 100 : 0, fullMark: 100 },
     { subject: 'Цифры', A: /\d/.test(password) ? 100 : 0, fullMark: 100 },
+    // eslint-disable-next-line no-useless-escape
     { subject: 'Спецсимволы', A: /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(password) ? 100 : 0, fullMark: 100 },
     { subject: 'Безопасность', A: result.strength.score, fullMark: 100 },
   ] : [];
