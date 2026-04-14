@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaImage, FaUpload, FaBroom, FaCheck, FaTimes, FaExclamationTriangle, FaDownload, FaMapMarkerAlt, FaCamera, FaCalendar, FaInfoCircle } from 'react-icons/fa';
+import { FaImage, FaUpload, FaBroom, FaCheck, FaTimes, FaExclamationTriangle, FaMapMarkerAlt, FaCamera, FaCalendar, FaInfoCircle } from 'react-icons/fa';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
 import API_URL from '../config';
