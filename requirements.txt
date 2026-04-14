@@ -1,0 +1,10 @@
+# Python dependencies для Vercel serverless (backend)
+fastapi
+mangum
+httpx
+faker
+reportlab
+python-dotenv
+Pillow
+python-multipart
+psycopg2-binary
