@@ -3,9 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaChartLine, FaShieldAlt, FaExclamationTriangle, FaCheck, FaEnvelope, FaUserSecret, FaKey } from 'react-icons/fa';
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import axios from 'axios';
+import API_URL from '../config';
 import './PrivacyScore.css';
-
-const API_URL = 'http://localhost:8000';
 
 const PrivacyScore = () => {
   const [email, setEmail] = useState('');

@@ -3,9 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaImage, FaUpload, FaBroom, FaCheck, FaTimes, FaExclamationTriangle, FaDownload, FaMapMarkerAlt, FaCamera, FaCalendar, FaInfoCircle } from 'react-icons/fa';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
+import API_URL from '../config';
 import './ExifCleaner.css';
-
-const API_URL = 'http://localhost:8000';
 
 const ExifCleaner = () => {
   const [file, setFile] = useState(null);

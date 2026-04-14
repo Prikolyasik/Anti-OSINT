@@ -2,9 +2,8 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaRobot, FaCopy, FaCheck, FaUser, FaEnvelope, FaPhone, FaBirthdayCake, FaMapMarkerAlt, FaUserCircle, FaKey } from 'react-icons/fa';
 import axios from 'axios';
+import API_URL from '../config';
 import './FakeGenerator.css';
-
-const API_URL = 'http://localhost:8000';
 
 const FakeGenerator = () => {
   const [identity, setIdentity] = useState(null);

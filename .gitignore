@@ -6,6 +6,8 @@
 .env
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
 
 # Python
 __pycache__/
@@ -56,6 +58,9 @@ yarn-error.log*
 # Build
 frontend/build/
 frontend/dist/
+
+# Vercel
+.vercel/
 
 # Misc
 *.tmp

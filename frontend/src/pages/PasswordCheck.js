@@ -3,9 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaKey, FaEye, FaEyeSlash, FaCheck, FaTimes, FaExclamationTriangle } from 'react-icons/fa';
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
+import API_URL from '../config';
 import './PasswordCheck.css';
-
-const API_URL = 'http://localhost:8000';
 
 const PasswordCheck = () => {
   const [password, setPassword] = useState('');

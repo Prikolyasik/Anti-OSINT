@@ -1,50 +1,62 @@
 import os
-import sqlite3
 import hashlib
 import re
 from datetime import datetime
 from typing import Optional
+from contextlib import contextmanager
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from faker import Faker
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 router = APIRouter(prefix="/identities", tags=["Identity Manager"])
 fake = Faker("ru_RU")
 
-# Путь к SQLite базе
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "identities.db")
+# --- PostgreSQL подключение ---
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("Переменная окружения DATABASE_URL не установлена. Укажите connectionString к PostgreSQL.")
 
 
-def get_db() -> sqlite3.Connection:
-    """Созёт подключение к SQLite базе."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def get_connection():
+    """Создаёт новое подключение к PostgreSQL."""
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
+
+
+@contextmanager
+def get_db():
+    """Контекстный менеджер для подключения к БД."""
+    conn = get_connection()
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 
 def init_db():
     """Инициализирует базу данных с таблицами."""
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS identities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            label TEXT NOT NULL,
-            name TEXT NOT NULL,
-            email TEXT NOT NULL,
-            phone TEXT,
-            birthdate TEXT,
-            address TEXT,
-            username TEXT NOT NULL,
-            password TEXT NOT NULL,
-            password_strength TEXT,
-            created_at TEXT NOT NULL
-        )
-    """)
-
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS identities (
+                id SERIAL PRIMARY KEY,
+                label TEXT NOT NULL,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                phone TEXT,
+                birthdate TEXT,
+                address TEXT,
+                username TEXT NOT NULL,
+                password TEXT NOT NULL,
+                password_strength TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        conn.commit()
 
 
 # Инициализируем БД при импорте
@@ -136,15 +148,15 @@ def create_identity(data: IdentityCreate):
     password = data.password or _generate_password()
     password_strength = _check_password_strength(password)
 
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO identities (label, name, email, phone, birthdate, address, username, password, password_strength, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (data.label, name, email, phone, birthdate, address, username, password, password_strength, datetime.now().isoformat()))
-    conn.commit()
-    identity_id = cursor.lastrowid
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO identities (label, name, email, phone, birthdate, address, username, password, password_strength, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (data.label, name, email, phone, birthdate, address, username, password, password_strength, datetime.now().isoformat()))
+        identity_id = cursor.fetchone()[0]
+        conn.commit()
 
     return {
         "id": identity_id,
@@ -164,11 +176,10 @@ def create_identity(data: IdentityCreate):
 @router.get("/")
 def list_identities():
     """Возвращает список всех сохранённых личностей."""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM identities ORDER BY created_at DESC")
-    rows = cursor.fetchall()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM identities ORDER BY created_at DESC")
+        rows = cursor.fetchall()
 
     return [
         {
@@ -187,11 +198,10 @@ def list_identities():
 @router.get("/{identity_id}")
 def get_identity(identity_id: int):
     """Возвращает полную информацию по конкретной личности."""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM identities WHERE id = ?", (identity_id,))
-    row = cursor.fetchone()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM identities WHERE id = %s", (identity_id,))
+        row = cursor.fetchone()
 
     if not row:
         raise HTTPException(status_code=404, detail="Личность не найдена")
@@ -202,56 +212,52 @@ def get_identity(identity_id: int):
 @router.put("/{identity_id}")
 def update_identity(identity_id: int, data: IdentityUpdate):
     """Обновляет данные личности."""
-    conn = get_db()
-    cursor = conn.cursor()
+    with get_db() as conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-    # Проверяем существование
-    cursor.execute("SELECT * FROM identities WHERE id = ?", (identity_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Личность не найдена")
+        # Проверяем существование
+        cursor.execute("SELECT * FROM identities WHERE id = %s", (identity_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Личность не найдена")
 
-    # Формируем обновление только переданных полей
-    updates = {}
-    if data.label is not None:
-        updates["label"] = data.label
-    if data.name is not None:
-        updates["name"] = data.name
-    if data.email is not None:
-        updates["email"] = data.email
-    if data.phone is not None:
-        updates["phone"] = data.phone
-    if data.birthdate is not None:
-        updates["birthdate"] = data.birthdate
-    if data.address is not None:
-        updates["address"] = data.address
-    if data.username is not None:
-        updates["username"] = data.username
-    if data.password is not None:
-        updates["password"] = data.password
-        updates["password_strength"] = _check_password_strength(data.password)
+        # Формируем обновление только переданных полей
+        updates = {}
+        if data.label is not None:
+            updates["label"] = data.label
+        if data.name is not None:
+            updates["name"] = data.name
+        if data.email is not None:
+            updates["email"] = data.email
+        if data.phone is not None:
+            updates["phone"] = data.phone
+        if data.birthdate is not None:
+            updates["birthdate"] = data.birthdate
+        if data.address is not None:
+            updates["address"] = data.address
+        if data.username is not None:
+            updates["username"] = data.username
+        if data.password is not None:
+            updates["password"] = data.password
+            updates["password_strength"] = _check_password_strength(data.password)
 
-    if updates:
-        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-        values = list(updates.values()) + [identity_id]
-        cursor.execute(f"UPDATE identities SET {set_clause} WHERE id = ?", values)
-        conn.commit()
+        if updates:
+            set_clause = ", ".join(f"{k} = %s" for k in updates.keys())
+            values = list(updates.values()) + [identity_id]
+            cursor.execute(f"UPDATE identities SET {set_clause} WHERE id = %s", values)
+            conn.commit()
 
-    conn.close()
     return {"message": "Личность обновлена", "id": identity_id}
 
 
 @router.delete("/{identity_id}")
 def delete_identity(identity_id: int):
     """Удаляет личность из базы."""
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM identities WHERE id = ?", (identity_id,))
-    if cursor.rowcount == 0:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Личность не найдена")
-    conn.commit()
-    conn.close()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM identities WHERE id = %s", (identity_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Личность не найдена")
+        conn.commit()
 
     return {"message": "Личность удалена", "id": identity_id}

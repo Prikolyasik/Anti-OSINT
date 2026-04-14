@@ -1,3 +1,4 @@
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -14,9 +15,12 @@ from routers.privacy_score import router as privacy_router
 
 app = FastAPI(title="Digital Alibi API")
 
+# CORS — разрешаем все для разработки, в продакшне ограничьте
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS if ALLOWED_ORIGINS != ["*"] else ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -33,3 +37,9 @@ app.include_router(privacy_router)
 @app.get("/")
 def root():
     return {"message": "Digital Alibi API работает!"}
+
+# --- Vercel serverless entry point ---
+def handler(request):
+    """Entry point для Vercel serverless functions."""
+    from mangum import Mangum
+    return Mangum(app)(request)

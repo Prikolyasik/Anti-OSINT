@@ -6,3 +6,5 @@ reportlab
 python-dotenv
 Pillow
 python-multipart
+psycopg2-binary
+mangum

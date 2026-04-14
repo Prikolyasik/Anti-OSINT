@@ -3,9 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import axios from 'axios';
+import API_URL from '../config';
 import './EmailCheck.css';
-
-const API_URL = 'http://localhost:8000';
 
 const EmailCheck = () => {
   const [email, setEmail] = useState('');

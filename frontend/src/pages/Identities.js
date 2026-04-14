@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaDatabase, FaPlus, FaEdit, FaTrash, FaCopy, FaCheck, FaExclamationTriangle, FaUser, FaSave } from 'react-icons/fa';
 import axios from 'axios';
+import API_URL from '../config';
 import './Identities.css';
-
-const API_URL = 'http://localhost:8000';
 
 const Identities = () => {
   const [identities, setIdentities] = useState([]);
@@ -31,8 +30,10 @@ const Identities = () => {
   const fetchIdentities = async () => {
     try {
       const response = await axios.get(`${API_URL}/identities/`);
+      console.log('Загружены личности:', response.data);
       setIdentities(response.data);
     } catch (err) {
+      console.error('Ошибка загрузки:', err);
       setError('Ошибка при загрузке личностей');
     } finally {
       setLoading(false);
@@ -42,17 +43,27 @@ const Identities = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
-    
+
+    const payload = { ...formData };
+    // Удаляем пустые поля, чтобы бэкенд сгенерировал их сам
+    Object.keys(payload).forEach(key => {
+      if (payload[key] === '') delete payload[key];
+    });
+
+    console.log('Отправляем:', payload);
+
     try {
       if (editingId) {
-        await axios.put(`${API_URL}/identities/${editingId}`, formData);
+        await axios.put(`${API_URL}/identities/${editingId}`, payload);
       } else {
-        await axios.post(`${API_URL}/identities/`, formData);
+        const resp = await axios.post(`${API_URL}/identities/`, payload);
+        console.log('Ответ сервера:', resp.data);
       }
-      fetchIdentities();
+      await fetchIdentities();
       resetForm();
     } catch (err) {
-      setError('Ошибка при сохранении личности');
+      console.error('Ошибка при сохранении:', err.response?.data || err.message);
+      setError(err.response?.data?.detail || 'Ошибка при сохранении личности');
     }
   };
 
