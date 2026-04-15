@@ -498,6 +498,396 @@ async def generate_report(email: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка генерации PDF: {str(e)}")
 
+
+# ============================================================
+# COMPREHENSIVE PDF REPORT (НОВЫЙ ENDPOINT)
+# ============================================================
+
+class ComprehensiveReportRequest(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
+    privacy_score: Optional[dict] = None
+    email_breaches: Optional[list] = None
+    username_sites: Optional[list] = None
+
+
+def _add_pdf_page(c, width, height, page_num):
+    """Добавляет новую страницу с колонтитулом."""
+    c.showPage()
+    c.setFont("Helvetica", 8)
+    c.setFillColor(colors.gray)
+    c.drawString(40, 30, f"Digital Alibi - Report | Page {page_num}")
+    c.drawString(width - 200, 30, f"Generated: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+    c.setLineWidth(0.5)
+    c.setStrokeColor(colors.lightgrey)
+    c.line(40, 40, width - 40, 40)
+    return height - 60
+
+
+@app.post("/report/comprehensive")
+async def generate_comprehensive_report(data: ComprehensiveReportRequest):
+    """Генерирует комплексный PDF-отчёт по всем параметрам."""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib import colors as rl_colors
+        from fastapi.responses import StreamingResponse
+
+        buf = io.BytesIO()
+        c = canvas.Canvas(buf, pagesize=A4)
+        width, height = A4
+        y = height - 60
+
+        # --- ТИТУЛЬНАЯ СТРАНИЦА ---
+        c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+        c.rect(0, 0, width, height, fill=True, stroke=False)
+
+        c.setFillColor(rl_colors.HexColor("#00f0ff"))
+        c.setFont("Helvetica-Bold", 32)
+        c.drawString(60, height - 180, "DIGITAL ALIBI")
+
+        c.setFillColor(rl_colors.white)
+        c.setFont("Helvetica-Bold", 22)
+        c.drawString(60, height - 230, "Comprehensive Digital Footprint Report")
+
+        c.setFont("Helvetica", 14)
+        c.setFillColor(rl_colors.HexColor("#8888aa"))
+        c.drawString(60, height - 270, f"Generated: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+
+        c.setFont("Helvetica", 12)
+        c.setFillColor(rl_colors.white)
+        items_y = height - 330
+        if data.email:
+            c.drawString(60, items_y, f"Email: {data.email}")
+            items_y -= 25
+        if data.username:
+            c.drawString(60, items_y, f"Username: {data.username}")
+            items_y -= 25
+        if data.password:
+            c.drawString(60, items_y, "Password: **** (analyzed)")
+            items_y -= 25
+
+        c.setFont("Helvetica", 10)
+        c.setFillColor(rl_colors.HexColor("#00ff88"))
+        c.drawString(60, 100, "Anti-OSINT Instrument")
+        c.setFillColor(rl_colors.HexColor("#8888aa"))
+        c.drawString(60, 75, "This report was generated for educational purposes.")
+
+        c.showPage()
+
+        # --- EMAIL SECTION ---
+        if data.email:
+            y = height - 60
+            c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+            c.rect(0, height - 80, width, 80, fill=True, stroke=False)
+            c.setFillColor(rl_colors.HexColor("#00f0ff"))
+            c.setFont("Helvetica-Bold", 20)
+            c.drawString(40, height - 45, "1. Email Analysis")
+
+            c.setFillColor(rl_colors.white)
+            c.setFont("Helvetica", 12)
+            c.drawString(40, height - 70, f"Email: {data.email}")
+
+            y = height - 120
+
+            if data.email_breaches:
+                breach_count = len(data.email_breaches)
+                risk = "LOW" if breach_count == 0 else "MEDIUM" if breach_count < 3 else "HIGH"
+                risk_colors_map = {"LOW": "#2ecc71", "MEDIUM": "#f39c12", "HIGH": "#e74c3c"}
+
+                c.setFillColor(rl_colors.HexColor(risk_colors_map.get(risk, "#888888")))
+                c.setFont("Helvetica-Bold", 16)
+                c.drawString(40, y, f"Risk Level: {risk}")
+                y -= 30
+
+                c.setFillColor(rl_colors.black)
+                c.setFont("Helvetica", 13)
+                c.drawString(40, y, f"Breaches Found: {breach_count}")
+                y -= 35
+
+                if breach_count > 0:
+                    c.setFont("Helvetica-Bold", 13)
+                    c.drawString(40, y, "Affected Databases:")
+                    y -= 25
+                    c.setFont("Helvetica", 11)
+
+                    for breach in data.email_breaches:
+                        if y < 60:
+                            y = _add_pdf_page(c, width, height, 2)
+                        if isinstance(breach, dict):
+                            name = breach.get("name", "Unknown")
+                            date_str = breach.get("date", "")
+                            c.drawString(60, y, f"- {name}")
+                            if date_str:
+                                c.setFillColor(rl_colors.gray)
+                                c.drawString(350, y, f"(date: {date_str})")
+                                c.setFillColor(rl_colors.black)
+                        else:
+                            c.drawString(60, y, f"- {breach}")
+                        y -= 22
+                else:
+                    c.setFont("Helvetica", 13)
+                    c.setFillColor(rl_colors.HexColor("#2ecc71"))
+                    c.drawString(40, y, "OK - Email not found in any known breaches")
+            else:
+                c.setFont("Helvetica", 12)
+                c.setFillColor(rl_colors.gray)
+                c.drawString(40, y, "No breach data provided")
+
+        # --- USERNAME SECTION ---
+        if data.username:
+            c.showPage()
+            y = height - 60
+            c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+            c.rect(0, height - 80, width, 80, fill=True, stroke=False)
+            c.setFillColor(rl_colors.HexColor("#00f0ff"))
+            c.setFont("Helvetica-Bold", 20)
+            c.drawString(40, height - 45, "2. Username Analysis")
+
+            c.setFillColor(rl_colors.white)
+            c.setFont("Helvetica", 12)
+            c.drawString(40, height - 70, f"Username: {data.username}")
+
+            y = height - 120
+
+            if data.username_sites:
+                found = [s for s in data.username_sites if s.get("exists", False)]
+                not_found = [s for s in data.username_sites if not s.get("exists", False) and not s.get("error")]
+
+                c.setFillColor(rl_colors.black)
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(40, y, f"Found on {len(found)} of {len(data.username_sites)} platforms")
+                y -= 30
+
+                if found:
+                    c.setFont("Helvetica-Bold", 13)
+                    c.drawString(40, y, "Detected Accounts:")
+                    y -= 25
+                    c.setFont("Helvetica", 10)
+
+                    for site in found:
+                        if y < 60:
+                            y = _add_pdf_page(c, width, height, 3)
+                        site_name = site.get("site", "Unknown")
+                        site_url = site.get("url", "")
+                        c.drawString(60, y, f"- {site_name}")
+                        c.setFillColor(rl_colors.HexColor("#0077cc"))
+                        c.drawString(250, y, site_url[:60])
+                        c.setFillColor(rl_colors.black)
+                        y -= 20
+
+                if not_found:
+                    if y < 100:
+                        y = _add_pdf_page(c, width, height, 3)
+                    y -= 10
+                    c.setFont("Helvetica-Bold", 13)
+                    c.drawString(40, y, "Account NOT Found On:")
+                    y -= 25
+                    c.setFont("Helvetica", 10)
+
+                    for site in not_found[:15]:
+                        site_name = site.get("site", "Unknown")
+                        c.drawString(60, y, f"o {site_name}")
+                        y -= 18
+
+                    if len(not_found) > 15:
+                        c.setFillColor(rl_colors.gray)
+                        c.drawString(60, y, f"... and {len(not_found) - 15} more platforms")
+            else:
+                c.setFont("Helvetica", 12)
+                c.setFillColor(rl_colors.gray)
+                c.drawString(40, y, "No username data provided")
+
+        # --- PASSWORD SECTION ---
+        c.showPage()
+        y = height - 60
+        c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+        c.rect(0, height - 80, width, 80, fill=True, stroke=False)
+        c.setFillColor(rl_colors.HexColor("#00f0ff"))
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(40, height - 45, "3. Password Analysis")
+
+        y = height - 120
+
+        if data.password:
+            pwd = data.password
+            pwd_len = len(pwd)
+            c.setFillColor(rl_colors.black)
+            c.setFont("Helvetica", 12)
+            c.drawString(40, y, f"Password length: {pwd_len} characters")
+            y -= 30
+
+            criteria = []
+            if pwd_len >= 12:
+                criteria.append(("Password length: GOOD", "#2ecc71"))
+            elif pwd_len >= 8:
+                criteria.append(("Password length: MEDIUM", "#f39c12"))
+            else:
+                criteria.append(("Password length: WEAK", "#e74c3c"))
+
+            checks = [
+                (any(ch.islower() for ch in pwd), "Contains lowercase letters", "No lowercase letters"),
+                (any(ch.isupper() for ch in pwd), "Contains uppercase letters", "No uppercase letters"),
+                (any(ch.isdigit() for ch in pwd), "Contains digits", "No digits"),
+                (any(ch in "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" for ch in pwd), "Contains special characters", "No special characters"),
+            ]
+
+            for passed, ok_msg, fail_msg in checks:
+                if passed:
+                    criteria.append((f"OK - {ok_msg}", "#2ecc71"))
+                else:
+                    criteria.append((f"FAIL - {fail_msg}", "#e74c3c"))
+
+            c.setFont("Helvetica-Bold", 13)
+            c.drawString(40, y, "Criteria:")
+            y -= 25
+            c.setFont("Helvetica", 11)
+
+            for msg, color in criteria:
+                c.setFillColor(rl_colors.HexColor(color))
+                c.drawString(60, y, msg)
+                y -= 22
+
+            # Recommendations
+            y -= 10
+            c.setFont("Helvetica-Bold", 13)
+            c.setFillColor(rl_colors.black)
+            c.drawString(40, y, "Recommendations:")
+            y -= 25
+            c.setFont("Helvetica", 11)
+            c.setFillColor(rl_colors.black)
+
+            recs = []
+            if pwd_len < 12:
+                recs.append("Increase password length to at least 12 characters")
+            if not any(ch.isupper() for ch in pwd):
+                recs.append("Add uppercase letters (A-Z)")
+            if not any(ch.isdigit() for ch in pwd):
+                recs.append("Add digits (0-9)")
+            if not any(ch in "!@#$%^&*()_+-=[]{}|;:,.<>?/~`" for ch in pwd):
+                recs.append("Add special characters (!@#$%...)")
+            if pwd_len < 8:
+                recs.append("Password is too short! Use at least 8 characters")
+
+            for rec in recs:
+                c.drawString(60, y, f"- {rec}")
+                y -= 22
+
+            if not recs:
+                c.setFillColor(rl_colors.HexColor("#2ecc71"))
+                c.drawString(60, y, "OK - Password meets all security criteria")
+        else:
+            c.setFillColor(rl_colors.gray)
+            c.setFont("Helvetica", 12)
+            c.drawString(40, y, "Password was not provided for analysis")
+
+        # --- PRIVACY SCORE SECTION ---
+        if data.privacy_score:
+            c.showPage()
+            y = height - 60
+            score_data = data.privacy_score
+            score_val = score_data.get("score", 0)
+            emoji = score_data.get("emoji", "?")
+
+            c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+            c.rect(0, height - 80, width, 80, fill=True, stroke=False)
+            c.setFillColor(rl_colors.HexColor("#00f0ff"))
+            c.setFont("Helvetica-Bold", 20)
+            c.drawString(40, height - 45, "4. Overall Privacy Score")
+
+            c.setFillColor(rl_colors.white)
+            c.setFont("Helvetica-Bold", 14)
+            c.drawString(40, height - 70, f"{emoji} Privacy Score: {score_val} / 100")
+
+            y = height - 120
+
+            c.setFillColor(rl_colors.black)
+            c.setFont("Helvetica", 12)
+            c.drawString(40, y, f"Total Penalty: {score_data.get('total_penalty', 0)} points")
+            y -= 30
+
+            details = score_data.get("details", {})
+            if details:
+                c.setFont("Helvetica-Bold", 13)
+                c.drawString(40, y, "Breakdown:")
+                y -= 25
+                c.setFont("Helvetica", 11)
+
+                if "email" in details:
+                    ed = details["email"]
+                    c.drawString(60, y, f"Email: {ed.get('breach_count', 0)} breaches, penalty: -{ed.get('breach_penalty', 0)}")
+                    y -= 22
+                if "username" in details:
+                    ud = details["username"]
+                    c.drawString(60, y, f"Username: found on {ud.get('spread_count', 0)} platforms, penalty: -{ud.get('spread_penalty', 0)}")
+                    y -= 22
+                if "password" in details:
+                    pd_data = details["password"]
+                    c.drawString(60, y, f"Password: strength: {pd_data.get('strength', 'N/A')}, penalty: -{pd_data.get('total_password_penalty', 0)}")
+                    y -= 22
+
+            recs = score_data.get("recommendations", [])
+            if recs:
+                y -= 10
+                c.setFont("Helvetica-Bold", 13)
+                c.drawString(40, y, "Recommendations:")
+                y -= 25
+                c.setFont("Helvetica", 11)
+                for rec in recs:
+                    c.drawString(60, y, f"- {rec}")
+                    y -= 22
+
+        # --- FINAL PAGE: General Recommendations ---
+        c.showPage()
+        y = height - 60
+        c.setFillColor(rl_colors.HexColor("#1a1a2e"))
+        c.rect(0, height - 80, width, 80, fill=True, stroke=False)
+        c.setFillColor(rl_colors.HexColor("#00f0ff"))
+        c.setFont("Helvetica-Bold", 20)
+        c.drawString(40, height - 45, "General Security Recommendations")
+
+        y = height - 120
+        c.setFillColor(rl_colors.black)
+        c.setFont("Helvetica", 11)
+
+        general_recs = [
+            "Use a password manager (Bitwarden, KeePass, 1Password)",
+            "Enable two-factor authentication (2FA) on all critical services",
+            "Use different usernames for different platforms",
+            "Consider using disposable email addresses for registration",
+            "Regularly check your email for data breaches",
+            "Clean EXIF metadata before publishing photos",
+            "Use fake data when registering on untrusted websites",
+            "Never reuse passwords across multiple sites",
+            "Review privacy settings on your social media accounts",
+            "Use a VPN or Tor for anonymous browsing",
+        ]
+
+        for rec in general_recs:
+            if y < 60:
+                y = _add_pdf_page(c, width, height, 5)
+            c.drawString(60, y, f"- {rec}")
+            y -= 24
+
+        y -= 30
+        c.setLineWidth(0.5)
+        c.setStrokeColor(rl_colors.lightgrey)
+        c.line(40, y, width - 40, y)
+        y -= 20
+        c.setFont("Helvetica", 9)
+        c.setFillColor(rl_colors.gray)
+        c.drawString(40, y, "This report was generated by Digital Alibi (Anti-OSINT).")
+        c.drawString(40, y - 15, "All data was obtained from open sources for educational purposes only.")
+
+        c.save()
+        buf.seek(0)
+
+        return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="digital_alibi_report.pdf"'})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating comprehensive PDF: {str(e)}")
+
 # ============================================================
 # IDENTITY MANAGER (PostgreSQL)
 # ============================================================
