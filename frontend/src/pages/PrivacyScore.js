@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaChartLine, FaShieldAlt, FaExclamationTriangle, FaCheck, FaEnvelope, FaUserSecret, FaKey } from 'react-icons/fa';
+import { FaChartLine, FaShieldAlt, FaExclamationTriangle, FaCheck, FaEnvelope, FaUserSecret, FaKey, FaFilePdf } from 'react-icons/fa';
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import axios from 'axios';
 import API_URL from '../config';
@@ -11,16 +11,17 @@ const PrivacyScore = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
   const calculateScore = async (e) => {
     e.preventDefault();
     if (!email && !username && !password) return;
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await axios.post(`${API_URL}/privacy/score`, {
         email: email || undefined,
@@ -32,6 +33,63 @@ const PrivacyScore = () => {
       setError('Ошибка при расчёте рейтинга приватности.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadComprehensiveReport = async () => {
+    if (!email && !username && !password) return;
+
+    setPdfLoading(true);
+    try {
+      // Собираем полные данные для отчёта (загружаем прямо сейчас)
+      let breaches = [];
+      let sites = [];
+
+      if (email) {
+        try {
+          const res = await axios.get(`${API_URL}/check/email/${encodeURIComponent(email)}`);
+          if (res.data.breaches) breaches = res.data.breaches;
+        } catch (e) {
+          console.error('Ошибка при получении данных об email:', e);
+        }
+      }
+
+      if (username) {
+        try {
+          const res = await axios.get(`${API_URL}/check/username/${encodeURIComponent(username)}`);
+          if (res.data.found) sites.push(...res.data.found);
+          if (res.data.not_found) sites.push(...res.data.not_found);
+        } catch (e) {
+          console.error('Ошибка при получении данных о username:', e);
+        }
+      }
+
+      const reportData = {
+        email: email || undefined,
+        username: username || undefined,
+        password: password || undefined,
+        privacy_score: result || undefined,
+        email_breaches: breaches.length > 0 ? breaches : undefined,
+        username_sites: sites.length > 0 ? sites : undefined,
+      };
+
+      const response = await axios.post(`${API_URL}/report/comprehensive`, reportData, {
+        responseType: 'blob',
+      });
+
+      // Скачиваем файл
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'digital_alibi_report.pdf');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Ошибка при скачивании отчёта.');
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -242,6 +300,33 @@ const PrivacyScore = () => {
                 </div>
               </div>
             )}
+
+            {/* Comprehensive PDF Download */}
+            <motion.div
+              className="pdf-download-section"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.7 }}
+            >
+              <button
+                className="btn-pdf"
+                onClick={downloadComprehensiveReport}
+                disabled={pdfLoading}
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="spinner small"></div> Генерация полного отчёта...
+                  </>
+                ) : (
+                  <>
+                    <FaFilePdf /> Скачать комплексный PDF-отчёт
+                  </>
+                )}
+              </button>
+              <p className="pdf-hint">
+                Полный отчёт: email, утечки, никнейм, сайты, пароль и рекомендации
+              </p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
