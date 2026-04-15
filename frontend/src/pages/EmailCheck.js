@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { FaSearch, FaExclamationTriangle, FaCheckCircle, FaTimesCircle, FaFilePdf } from 'react-icons/fa';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import axios from 'axios';
 import API_URL from '../config';
@@ -9,17 +9,18 @@ import './EmailCheck.css';
 const EmailCheck = () => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
   const checkEmail = async (e) => {
     e.preventDefault();
     if (!email.trim()) return;
-    
+
     setLoading(true);
     setError(null);
     setResult(null);
-    
+
     try {
       const response = await axios.get(`${API_URL}/check/email/${encodeURIComponent(email)}`);
       setResult(response.data);
@@ -27,6 +28,32 @@ const EmailCheck = () => {
       setError('Ошибка при проверке email. Попробуйте позже.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const downloadPdfReport = async () => {
+    if (!result?.email) return;
+
+    setPdfLoading(true);
+    try {
+      const response = await axios.get(`${API_URL}/report/generate`, {
+        params: { email: result.email },
+        responseType: 'blob',
+      });
+
+      // Создаём ссылку для скачивания
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `report_${result.email.replace('@', '_')}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('Ошибка при скачивании PDF-отчёта.');
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -191,6 +218,33 @@ const EmailCheck = () => {
                 <p>Email не найден в известных утечках данных. Продолжайте следить за приватностью!</p>
               </motion.div>
             )}
+
+            {/* PDF Download Button */}
+            <motion.div
+              className="pdf-download-section"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.5 }}
+            >
+              <button
+                className="btn-pdf"
+                onClick={downloadPdfReport}
+                disabled={pdfLoading}
+              >
+                {pdfLoading ? (
+                  <>
+                    <div className="spinner small"></div> Генерация PDF...
+                  </>
+                ) : (
+                  <>
+                    <FaFilePdf /> Скачать PDF-отчёт
+                  </>
+                )}
+              </button>
+              <p className="pdf-hint">
+                Подробный отчёт с рекомендациями по защите
+              </p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

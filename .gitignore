@@ -49,6 +49,9 @@ desktop.ini
 backend/reports/
 *.pdf
 
+# Очищенные изображения (генерируемые)
+backend/cleaned_images/
+
 # Node.js
 node_modules/
 npm-debug.log*
@@ -61,6 +64,14 @@ frontend/dist/
 
 # Vercel
 .vercel/
+
+# Qwen Code (AI assistant)
+.qwen/
+QWEN.md
+
+# Тесты и покрытие (если появятся)
+htmlcov/
+.junit.xml
 
 # Misc
 *.tmp

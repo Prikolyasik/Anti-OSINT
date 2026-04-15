@@ -198,16 +198,63 @@
   font-size: 16px;
 }
 
+/* PDF Download Section */
+.pdf-download-section {
+  text-align: center;
+  padding: 24px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  border-radius: 16px;
+  margin-top: 24px;
+}
+
+.btn-pdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--bg-dark);
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(0, 240, 255, 0.3);
+}
+
+.btn-pdf:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 25px rgba(0, 240, 255, 0.5);
+}
+
+.btn-pdf:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-pdf svg {
+  font-size: 20px;
+}
+
+.pdf-hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 12px;
+  opacity: 0.7;
+}
+
 @media (max-width: 768px) {
   .input-group {
     flex-direction: column;
   }
-  
+
   .risk-banner {
     flex-direction: column;
     text-align: center;
   }
-  
+
   .breaches-grid {
     grid-template-columns: 1fr;
   }
