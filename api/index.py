@@ -142,35 +142,39 @@ def generate_identity():
 # ============================================================
 
 PLATFORMS = [
-    {"name": "GitHub", "url": "https://github.com/{}"},
-    {"name": "Twitter", "url": "https://twitter.com/{}"},
-    {"name": "Reddit", "url": "https://www.reddit.com/user/{}"},
-    {"name": "Instagram", "url": "https://www.instagram.com/{}"},
+    {"name": "GitHub", "url": "https://github.com/{}", "osint": True},
+    {"name": "Telegram", "url": "https://t.me/{}", "osint": True},
+    {"name": "VK", "url": "https://vk.com/{}", "osint": True},
+    {"name": "Twitter", "url": "https://twitter.com/{}", "osint": True},
+    {"name": "Instagram", "url": "https://www.instagram.com/{}", "osint": True},
+    {"name": "Reddit", "url": "https://www.reddit.com/user/{}", "osint": True},
+    {"name": "YouTube", "url": "https://www.youtube.com/@{}", "osint": True},
+    {"name": "TikTok", "url": "https://www.tiktok.com/@{}", "osint": True},
+    {"name": "Twitch", "url": "https://www.twitch.tv/{}", "osint": True},
+    {"name": "Steam", "url": "https://steamcommunity.com/id/{}", "osint": True},
+    {"name": "Pinterest", "url": "https://www.pinterest.com/{}", "osint": True},
+    {"name": "Medium", "url": "https://medium.com/@{}", "osint": True},
+    {"name": "SoundCloud", "url": "https://soundcloud.com/{}", "osint": True},
+    {"name": "Spotify", "url": "https://open.spotify.com/user/{}", "osint": True},
+    {"name": "Gravatar", "url": "https://en.gravatar.com/{}", "osint": True},
+    {"name": "Goodreads", "url": "https://www.goodreads.com/{}", "osint": True},
+    {"name": "Behance", "url": "https://www.behance.net/{}", "osint": True},
+    {"name": "Dribbble", "url": "https://dribbble.com/{}", "osint": True},
+    {"name": "CodePen", "url": "https://codepen.io/{}", "osint": True},
+    {"name": "GitLab", "url": "https://gitlab.com/{}", "osint": True},
+    {"name": "Mastodon", "url": "https://mastodon.social/@{}", "osint": True},
+    {"name": "Threads", "url": "https://www.threads.net/@{}", "osint": True},
+    {"name": "Bluesky", "url": "https://bsky.app/profile/{}", "osint": True},
+    {"name": "Minecraft", "url": "https://namemc.com/profile/{}", "osint": True},
     {"name": "Facebook", "url": "https://www.facebook.com/{}"},
-    {"name": "YouTube", "url": "https://www.youtube.com/@{}"},
-    {"name": "TikTok", "url": "https://www.tiktok.com/@{}"},
-    {"name": "Twitch", "url": "https://www.twitch.tv/{}"},
-    {"name": "Steam", "url": "https://steamcommunity.com/id/{}"},
-    {"name": "Telegram", "url": "https://t.me/{}"},
-    {"name": "VK", "url": "https://vk.com/{}"},
-    {"name": "Pinterest", "url": "https://www.pinterest.com/{}"},
     {"name": "Tumblr", "url": "https://{}.tumblr.com"},
     {"name": "WordPress", "url": "https://{}.wordpress.com"},
-    {"name": "Medium", "url": "https://medium.com/@{}"},
     {"name": "LinkedIn", "url": "https://www.linkedin.com/in/{}"},
-    {"name": "SoundCloud", "url": "https://soundcloud.com/{}"},
-    {"name": "Spotify", "url": "https://open.spotify.com/user/{}"},
     {"name": "Vimeo", "url": "https://vimeo.com/{}"},
     {"name": "Flickr", "url": "https://www.flickr.com/people/{}"},
     {"name": "500px", "url": "https://500px.com/p/{}"},
-    {"name": "Gravatar", "url": "https://en.gravatar.com/{}"},
     {"name": "Last.fm", "url": "https://www.last.fm/user/{}"},
-    {"name": "Goodreads", "url": "https://www.goodreads.com/{}"},
     {"name": "DeviantArt", "url": "https://{}.deviantart.com"},
-    {"name": "Behance", "url": "https://www.behance.net/{}"},
-    {"name": "Dribbble", "url": "https://dribbble.com/{}"},
-    {"name": "CodePen", "url": "https://codepen.io/{}"},
-    {"name": "GitLab", "url": "https://gitlab.com/{}"},
     {"name": "Bitbucket", "url": "https://bitbucket.org/{}"},
     {"name": "SourceForge", "url": "https://sourceforge.net/u/{}"},
     {"name": "Docker Hub", "url": "https://hub.docker.com/u/{}"},
@@ -183,11 +187,7 @@ PLATFORMS = [
     {"name": "Venmo", "url": "https://venmo.com/{}"},
     {"name": "Wikipedia", "url": "https://en.wikipedia.org/wiki/User:{}"},
     {"name": "Fandom", "url": "https://community.fandom.com/wiki/User:{}"},
-    {"name": "Mastodon", "url": "https://mastodon.social/@{}"},
-    {"name": "Threads", "url": "https://www.threads.net/@{}"},
-    {"name": "Bluesky", "url": "https://bsky.app/profile/{}"},
     {"name": "Roblox", "url": "https://www.roblox.com/search/users?keyword={}"},
-    {"name": "Minecraft", "url": "https://namemc.com/profile/{}"},
     {"name": "Xbox", "url": "https://account.xbox.com/profile?gamertag={}"},
     {"name": "PlayStation", "url": "https://psnprofiles.com/{}"},
     {"name": "Nintendo", "url": "https://support.nintendo.com/switch/profile"},
@@ -210,19 +210,101 @@ PLATFORMS = [
 ]
 
 
+def _extract_personal_info(html: str) -> dict:
+    """
+    Извлекает личную информацию из HTML страницы.
+    Ищет: имя (из OG tags, title, meta), телефон (regex).
+    """
+    info = {"name": None, "phone": None, "bio": None, "avatar": None}
+
+    # --- Имя из OG tags ---
+    import re
+    og_name = re.search(r'<meta[^>]*property="og:title"[^>]*content="([^"]*)"', html)
+    if not og_name:
+        og_name = re.search(r'<meta[^>]*content="([^"]*)"[^>]*property="og:title"', html)
+    if og_name:
+        name_val = og_name.group(1).strip()
+        # Фильтруем мусорные названия
+        if name_val and len(name_val) > 2 and name_val.lower() not in ["instagram", "tiktok", "redirect"]:
+            info["name"] = name_val
+
+    # --- Имя из <title> ---
+    if not info["name"]:
+        title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
+        if title_match:
+            title = title_match.group(1).strip()
+            # Убираем название сайта из title (например "user | GitHub")
+            clean = re.split(r'\s*[\|–\-]\s*', title)[0].strip()
+            if clean and len(clean) > 2:
+                info["name"] = clean
+
+    # --- Description / Bio ---
+    og_desc = re.search(r'<meta[^>]*property="og:description"[^>]*content="([^"]*)"', html)
+    if not og_desc:
+        og_desc = re.search(r'<meta[^>]*content="([^"]*)"[^>]*property="og:description"', html)
+    if og_desc:
+        desc = og_desc.group(1).strip()
+        if desc and len(desc) > 5:
+            info["bio"] = desc[:200]
+
+    # --- Аватар ---
+    og_image = re.search(r'<meta[^>]*property="og:image"[^>]*content="([^"]*)"', html)
+    if not og_image:
+        og_image = re.search(r'<meta[^>]*content="([^"]*)"[^>]*property="og:image"', html)
+    if og_image:
+        info["avatar"] = og_image.group(1).strip()
+
+    # --- Телефон (regex) ---
+    phone_patterns = [
+        r'\+7[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}',  # Россия
+        r'\+1[\s\-\(]*\d{3}[\s\-\)]*\d{3}[\s\-]*\d{4}',  # USA
+        r'\+44[\s\-\(]*\d{2,4}[\s\-\)]*\d{3,4}[\s\-]*\d{3,4}',  # UK
+        r'\+\d{1,3}[\s\-\(]*\d{2,4}[\s\-\)]*\d{3,4}[\s\-]*\d{3,4}',  # Generic international
+    ]
+    for pattern in phone_patterns:
+        phone_match = re.search(pattern, html)
+        if phone_match:
+            phone = phone_match.group(0).strip()
+            # Фильтруем ложные срабатывания
+            if len(phone) >= 10:
+                info["phone"] = phone
+                break
+
+    return info
+
+
 @app.get("/check/username/{username}")
 async def check_username(username: str):
     found = []
     not_found = []
     errors = []
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(
+        timeout=8.0,
+        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    ) as client:
         for platform in PLATFORMS:
             url = platform["url"].format(username)
             try:
                 resp = await client.get(url, follow_redirects=True)
                 exists = resp.status_code == 200
                 result = {"site": platform["name"], "url": url, "exists": exists}
+
+                # OSINT: извлекаем личную информацию для найденных страниц
+                personal_info = None
+                if exists and platform.get("osint", False):
+                    try:
+                        personal_info = _extract_personal_info(resp.text)
+                        # Убираем None поля
+                        personal_info = {k: v for k, v in personal_info.items() if v}
+                        if not personal_info:
+                            personal_info = None
+                    except Exception:
+                        pass
+
+                if personal_info:
+                    result["personal_info"] = personal_info
+
                 if exists:
                     found.append(result)
                 else:

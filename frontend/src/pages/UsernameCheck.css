@@ -201,6 +201,67 @@
   transform: scale(1.1);
 }
 
+/* OSINT Personal Info */
+.personal-info {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 0, 110, 0.08);
+  border: 1px solid rgba(255, 0, 110, 0.25);
+  border-radius: 8px;
+}
+
+.personal-info-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.personal-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.info-icon {
+  color: var(--primary);
+  font-size: 10px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.info-label {
+  color: var(--text-secondary);
+  margin-right: 4px;
+}
+
+.info-value {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.phone-highlight {
+  background: rgba(255, 0, 110, 0.15);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border-left: 2px solid var(--danger);
+}
+
+.phone-highlight .info-value {
+  color: var(--danger);
+  font-weight: 600;
+}
+
 @media (max-width: 768px) {
   .summary-cards {
     grid-template-columns: 1fr;

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaSearch, FaCheck, FaTimes, FaExclamationTriangle, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaSearch, FaCheck, FaTimes, FaExclamationTriangle, FaExternalLinkAlt, FaUser, FaPhone, FaUserSecret, FaInfoCircle } from 'react-icons/fa';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import axios from 'axios';
 import API_URL from '../config';
@@ -167,6 +167,7 @@ const UsernameCheck = () => {
 
             {/* Sites List */}
             <div className="sites-section">
+              <h3>Результаты по платформам</h3>
               <div className="sites-list">
                 {getFilteredSites().map((site, index) => (
                   <motion.div
@@ -182,6 +183,44 @@ const UsernameCheck = () => {
                     <div className="site-info">
                       <h4>{site.site}</h4>
                       {site.error && <p className="site-error">{site.error}</p>}
+
+                      {/* OSINT: Личная информация */}
+                      {site.personal_info && (
+                        <div className="personal-info">
+                          <div className="personal-info-header">
+                            <FaUserSecret /> Обнаружены данные:
+                          </div>
+                          <div className="personal-info-grid">
+                            {site.personal_info.name && (
+                              <div className="info-item">
+                                <FaUser className="info-icon" />
+                                <div>
+                                  <span className="info-label">Имя:</span>
+                                  <span className="info-value">{site.personal_info.name}</span>
+                                </div>
+                              </div>
+                            )}
+                            {site.personal_info.phone && (
+                              <div className="info-item phone-highlight">
+                                <FaPhone className="info-icon" />
+                                <div>
+                                  <span className="info-label">Телефон:</span>
+                                  <span className="info-value">{site.personal_info.phone}</span>
+                                </div>
+                              </div>
+                            )}
+                            {site.personal_info.bio && (
+                              <div className="info-item">
+                                <FaInfoCircle className="info-icon" />
+                                <div>
+                                  <span className="info-label">Bio:</span>
+                                  <span className="info-value">{site.personal_info.bio}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <a href={site.url} target="_blank" rel="noopener noreferrer" className="site-link">
                       <FaExternalLinkAlt />
