@@ -653,7 +653,6 @@ async def generate_comprehensive_report(data: ComprehensiveReportRequest):
 
             if data.username_sites:
                 found = [s for s in data.username_sites if s.get("exists", False)]
-                not_found = [s for s in data.username_sites if not s.get("exists", False) and not s.get("error")]
 
                 c.setFillColor(rl_colors.black)
                 c.setFont("Helvetica-Bold", 14)
@@ -676,24 +675,10 @@ async def generate_comprehensive_report(data: ComprehensiveReportRequest):
                         c.drawString(250, y, site_url[:60])
                         c.setFillColor(rl_colors.black)
                         y -= 20
-
-                if not_found:
-                    if y < 100:
-                        y = _add_pdf_page(c, width, height, 3)
-                    y -= 10
-                    c.setFont("Helvetica-Bold", 13)
-                    c.drawString(40, y, "Account NOT Found On:")
-                    y -= 25
-                    c.setFont("Helvetica", 10)
-
-                    for site in not_found[:15]:
-                        site_name = site.get("site", "Unknown")
-                        c.drawString(60, y, f"o {site_name}")
-                        y -= 18
-
-                    if len(not_found) > 15:
-                        c.setFillColor(rl_colors.gray)
-                        c.drawString(60, y, f"... and {len(not_found) - 15} more platforms")
+                else:
+                    c.setFont("Helvetica", 13)
+                    c.setFillColor(rl_colors.HexColor("#2ecc71"))
+                    c.drawString(40, y, "OK - Username not found on any platform")
             else:
                 c.setFont("Helvetica", 12)
                 c.setFillColor(rl_colors.gray)
