@@ -16,7 +16,7 @@ from mangum import Mangum
 from faker import Faker
 import httpx
 from PIL import Image
-from PIL.ExifTags import TAGS
+from PIL.ExifTags import TAGS, GPSTAGS
 import io
 
 # --- DATABASE (PostgreSQL - Neon) ---
@@ -85,6 +85,45 @@ app.add_middleware(
 )
 
 fake = Faker("ru_RU")
+
+# --- GPS DECODING ---
+
+GPS_TAG_ID = 34853  # GPSInfo IFD tag
+
+
+def _decode_gps(gps_ifd: dict) -> dict:
+    """Декодирует GPS IFD в читаемые координаты (широта, долгота, высота)."""
+    gps = {}
+    try:
+        lat_val = gps_ifd.get(2)   # GPSLatitude
+        lat_ref = gps_ifd.get(1)   # GPSLatitudeRef  ("N" / "S")
+        lon_val = gps_ifd.get(4)   # GPSLongitude
+        lon_ref = gps_ifd.get(3)   # GPSLongitudeRef ("E" / "W")
+        alt_val = gps_ifd.get(6)   # GPSAltitude
+
+        if lat_val:
+            d, m, s = [float(v) for v in lat_val]
+            lat = d + m / 60 + s / 3600
+            if lat_ref == "S":
+                lat = -lat
+            gps["latitude"] = round(lat, 7)
+
+        if lon_val:
+            d, m, s = [float(v) for v in lon_val]
+            lon = d + m / 60 + s / 3600
+            if lon_ref == "W":
+                lon = -lon
+            gps["longitude"] = round(lon, 7)
+
+        if alt_val is not None:
+            try:
+                gps["altitude"] = round(float(alt_val), 1)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return gps
+
 
 # --- ROOT ---
 
@@ -498,21 +537,37 @@ async def exif_analyze(file: UploadFile = File(...)):
 
         for tag_id, value in exif_data.items():
             tag = TAGS.get(tag_id, str(tag_id))
+
+            # GPS — декодируем в читаемые координаты
+            if tag_id == GPS_TAG_ID:
+                try:
+                    gps_ifd = exif_data.get_ifd(GPS_TAG_ID)
+                    if gps_ifd:
+                        gps_decoded = _decode_gps(gps_ifd)
+                        if gps_decoded:
+                            parsed["GPS"] = gps_decoded
+                            privacy_risks.append("📍 Обнаружены GPS-координаты — можно определить местоположение")
+                except Exception:
+                    parsed[tag] = str(value)
+                continue
+
             if isinstance(value, bytes):
                 value = value.decode("utf-8", errors="replace")
             parsed[tag] = str(value)
 
-            if tag in ("GPSInfo", "GPS"):
-                privacy_risks.append("Обнаружены GPS-координаты")
-            if "Location" in tag:
-                privacy_risks.append(f"Обнаружена локация: {value}")
+            if tag == "DateTime" or tag == "DateTimeOriginal":
+                privacy_risks.append(f"📅 Дата и время съёмки: {value}")
+            if tag == "Model":
+                privacy_risks.append(f"📷 Модель камеры: {value}")
             if tag == "Software":
-                privacy_risks.append(f"ПО может раскрыть устройство: {value}")
+                privacy_risks.append(f"💻 ПО обработки: {value}")
+            if tag == "Make":
+                privacy_risks.append(f"🏭 Производитель: {value}")
 
         if not privacy_risks and len(parsed) > 3:
-            privacy_risks.append("Метаданные могут содержать скрытую информацию")
+            privacy_risks.append("ℹ️ Метаданные могут содержать скрытую информацию")
 
-        risk_level = "высокий" if len(privacy_risks) >= 2 else "средний" if len(privacy_risks) >= 1 else "низкий"
+        risk_level = "высокий" if "GPS" in parsed else "средний" if privacy_risks else "низкий"
 
         return {
             "filename": file.filename,
@@ -531,17 +586,38 @@ async def exif_clean(file: UploadFile = File(...)):
         contents = await file.read()
         img = Image.open(io.BytesIO(contents))
 
+        # Запоминаем формат до создания нового изображения
+        fmt = (img.format or "PNG").upper()
+
+        # Пересоздаём изображение без метаданных через getdata()
         data = list(img.getdata())
         img_clean = Image.new(img.mode, img.size)
         img_clean.putdata(data)
 
+        # JPEG не поддерживает прозрачность — конвертируем RGBA/P → RGB
+        if fmt == "JPEG" and img_clean.mode in ("RGBA", "P", "LA"):
+            img_clean = img_clean.convert("RGB")
+
         buf = io.BytesIO()
-        fmt = img.format or "PNG"
-        img_clean.save(buf, format=fmt)
+        if fmt == "JPEG":
+            img_clean.save(buf, format="JPEG", quality=95)
+            content_type = "image/jpeg"
+        elif fmt == "WEBP":
+            img_clean.save(buf, format="WEBP")
+            content_type = "image/webp"
+        else:
+            img_clean.save(buf, format="PNG")
+            content_type = "image/png"
+            fmt = "PNG"
+
         buf.seek(0)
 
         from fastapi.responses import StreamingResponse
-        return StreamingResponse(buf, media_type="image/png", headers={"Content-Disposition": f'attachment; filename="cleaned_{file.filename}"'})
+        return StreamingResponse(
+            buf,
+            media_type=content_type,
+            headers={"Content-Disposition": f'attachment; filename="cleaned_{file.filename}"'}
+        )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ошибка очистки: {str(e)}")
 
@@ -596,13 +672,14 @@ class ComprehensiveReportRequest(BaseModel):
 
 def _add_pdf_page(c, width, height, page_num):
     """Добавляет новую страницу с колонтитулом."""
+    from reportlab.lib import colors as rl_colors
     c.showPage()
     c.setFont("Helvetica", 8)
-    c.setFillColor(colors.gray)
+    c.setFillColor(rl_colors.gray)
     c.drawString(40, 30, f"Digital Alibi - Report | Page {page_num}")
     c.drawString(width - 200, 30, f"Generated: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
     c.setLineWidth(0.5)
-    c.setStrokeColor(colors.lightgrey)
+    c.setStrokeColor(rl_colors.lightgrey)
     c.line(40, 40, width - 40, 40)
     return height - 60
 

@@ -127,15 +127,6 @@ async def _check_password_security(password: str) -> dict:
 async def calculate_privacy_score(data: PrivacyScoreRequest):
     """
     Агрегирующий endpoint — рассчитывает «Рейтинг приватности» от 0 до 100.
-
-    Стартовая оценка: 100 баллов.
-    Штрафы:
-      - Email в утечках: -20 за каждую утечку (макс -60)
-      - Никнейм на 10+ сайтах: -10...-30
-      - Пароль найден в HIBP: -10...-30
-      - Короткий пароль (< 8): -10...-15
-
-    Чем НИЖЕ балл — тем хуже ситуация с приватностью.
     """
     total_penalty = 0
     details = {}
